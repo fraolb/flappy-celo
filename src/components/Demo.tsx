@@ -3,9 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Input } from "../components/ui/input";
 import { signIn, signOut, getCsrfToken } from "next-auth/react";
-import sdk, {
-  SignIn as SignInCore,
-} from "@farcaster/frame-sdk";
+import sdk, { SignIn as SignInCore } from "@farcaster/frame-sdk";
 import {
   useAccount,
   useSendTransaction,
@@ -17,11 +15,6 @@ import {
   useSwitchChain,
   useChainId,
 } from "wagmi";
-import {
-  useConnection as useSolanaConnection,
-  useWallet as useSolanaWallet,
-} from '@solana/wallet-adapter-react';
-import { useHasSolanaProvider } from "./providers/SafeFarcasterSolanaProvider";
 
 import { config } from "~/components/providers/WagmiProvider";
 import { Button } from "~/components/ui/Button";
@@ -31,12 +24,21 @@ import { BaseError, UserRejectedRequestError } from "viem";
 import { useSession } from "next-auth/react";
 import { Label } from "~/components/ui/label";
 import { useFrame } from "~/components/providers/FrameProvider";
-import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
 
 export default function Demo(
   { title }: { title?: string } = { title: "Frames v2 Demo" }
 ) {
-  const { isSDKLoaded, context, added, notificationDetails, lastEvent, addFrame, addFrameResult, openUrl, close } = useFrame();
+  const {
+    isSDKLoaded,
+    context,
+    added,
+    notificationDetails,
+    lastEvent,
+    addFrame,
+    addFrameResult,
+    openUrl,
+    close,
+  } = useFrame();
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [sendNotificationResult, setSendNotificationResult] = useState("");
@@ -44,13 +46,6 @@ export default function Demo(
 
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
-  const hasSolanaProvider = useHasSolanaProvider();
-  let solanaWallet, solanaPublicKey, solanaSignMessage, solanaAddress;
-  if (hasSolanaProvider) {
-    solanaWallet = useSolanaWallet();
-    ({ publicKey: solanaPublicKey, signMessage: solanaSignMessage } = solanaWallet);
-    solanaAddress = solanaPublicKey?.toBase58();
-  }
 
   useEffect(() => {
     console.log("isSDKLoaded", isSDKLoaded);
@@ -234,7 +229,13 @@ export default function Demo(
                 sdk.actions.openUrl
               </pre>
             </div>
-            <Button onClick={() => openUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ")}>Open Link</Button>
+            <Button
+              onClick={() =>
+                openUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+              }
+            >
+              Open Link
+            </Button>
           </div>
 
           <div className="mb-4">
@@ -305,7 +306,7 @@ export default function Demo(
           </div>
 
           <div className="mb-4">
-            <Button 
+            <Button
               onClick={async () => {
                 if (context?.user?.fid) {
                   const shareUrl = `${process.env.NEXT_PUBLIC_URL}/share/${context.user.fid}`;
@@ -338,10 +339,7 @@ export default function Demo(
 
           <div className="mb-4">
             {isConnected ? (
-              <Button
-                onClick={() => disconnect()}
-                className="w-full"
-              >
+              <Button onClick={() => disconnect()} className="w-full">
                 Disconnect
               </Button>
             ) : context ? (
@@ -426,146 +424,8 @@ export default function Demo(
             </>
           )}
         </div>
-
-        {solanaAddress && (
-          <div>
-            <h2 className="font-2xl font-bold">Solana</h2>
-            <div className="my-2 text-xs">
-              Address: <pre className="inline">{truncateAddress(solanaAddress)}</pre>
-            </div>
-            <SignSolanaMessage signMessage={solanaSignMessage} />
-            <div className="mb-4">
-              <SendSolana />
-            </div>
-          </div>
-        )}
       </div>
     </div>
-  );
-}
-
-// Solana functions inspired by farcaster demo
-// https://github.com/farcasterxyz/frames-v2-demo/blob/main/src/components/Demo.tsx
-function SignSolanaMessage({ signMessage }: { signMessage?: (message: Uint8Array) => Promise<Uint8Array> }) {
-  const [signature, setSignature] = useState<string | undefined>();
-  const [signError, setSignError] = useState<Error | undefined>();
-  const [signPending, setSignPending] = useState(false);
-
-  const handleSignMessage = useCallback(async () => {
-    setSignPending(true);
-    try {
-      if (!signMessage) {
-        throw new Error('no Solana signMessage');
-      }
-      const input = new TextEncoder().encode("Hello from Solana!");
-      const signatureBytes = await signMessage(input);
-      const signature = btoa(String.fromCharCode(...signatureBytes));
-      setSignature(signature);
-      setSignError(undefined);
-    } catch (e) {
-      if (e instanceof Error) {
-        setSignError(e);
-      }
-    } finally {
-      setSignPending(false);
-    }
-  }, [signMessage]);
-
-  return (
-    <>
-      <Button
-        onClick={handleSignMessage}
-        disabled={signPending}
-        isLoading={signPending}
-        className="mb-4"
-      >
-        Sign Message
-      </Button>
-      {signError && renderError(signError)}
-      {signature && (
-        <div className="mt-2 text-xs">
-          <div>Signature: {signature}</div>
-        </div>
-      )}
-    </>
-  );
-}
-
-function SendSolana() {
-  const [state, setState] = useState<
-    | { status: 'none' }
-    | { status: 'pending' }
-    | { status: 'error'; error: Error }
-    | { status: 'success'; signature: string }
-  >({ status: 'none' });
-
-  const { connection: solanaConnection } = useSolanaConnection();
-  const { sendTransaction, publicKey } = useSolanaWallet();
-
-  // This should be replaced but including it from the original demo
-  // https://github.com/farcasterxyz/frames-v2-demo/blob/main/src/components/Demo.tsx#L718
-  const ashoatsPhantomSolanaWallet = 'Ao3gLNZAsbrmnusWVqQCPMrcqNi6jdYgu8T6NCoXXQu1';
-
-  const handleSend = useCallback(async () => {
-    setState({ status: 'pending' });
-    try {
-      if (!publicKey) {
-        throw new Error('no Solana publicKey');
-      }
-
-      const { blockhash } = await solanaConnection.getLatestBlockhash();
-      if (!blockhash) {
-        throw new Error('failed to fetch latest Solana blockhash');
-      }
-
-      const fromPubkeyStr = publicKey.toBase58();
-      const toPubkeyStr = ashoatsPhantomSolanaWallet;
-      const transaction = new Transaction();
-      transaction.add(
-        SystemProgram.transfer({
-          fromPubkey: new PublicKey(fromPubkeyStr),
-          toPubkey: new PublicKey(toPubkeyStr),
-          lamports: 0n,
-        }),
-      );
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = new PublicKey(fromPubkeyStr);
-
-      const simulation = await solanaConnection.simulateTransaction(transaction);
-      if (simulation.value.err) {
-        // Gather logs and error details for debugging
-        const logs = simulation.value.logs?.join('\n') ?? 'No logs';
-        const errDetail = JSON.stringify(simulation.value.err);
-        throw new Error(`Simulation failed: ${errDetail}\nLogs:\n${logs}`);
-      }
-      const signature = await sendTransaction(transaction, solanaConnection);
-      setState({ status: 'success', signature });
-    } catch (e) {
-      if (e instanceof Error) {
-        setState({ status: 'error', error: e });
-      } else {
-        setState({ status: 'none' });
-      }
-    }
-  }, [sendTransaction, publicKey, solanaConnection]);
-
-  return (
-    <>
-      <Button
-        onClick={handleSend}
-        disabled={state.status === 'pending'}
-        isLoading={state.status === 'pending'}
-        className="mb-4"
-      >
-        Send Transaction (sol)
-      </Button>
-      {state.status === 'error' && renderError(state.error)}
-      {state.status === 'success' && (
-        <div className="mt-2 text-xs">
-          <div>Hash: {truncateAddress(state.signature)}</div>
-        </div>
-      )}
-    </>
   );
 }
 
@@ -801,4 +661,3 @@ const renderError = (error: Error | null) => {
 
   return <div className="text-red-500 text-xs mt-1">{error.message}</div>;
 };
-
